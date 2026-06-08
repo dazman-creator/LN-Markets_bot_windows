@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lnmarkets_bot/services/log_service.dart';
 import 'package:lnmarkets_bot/services/settings_service.dart';
@@ -94,5 +96,88 @@ void main() {
     expect(prefs.getString('bot_position'), contains('live-position'));
     expect(
         prefs.getString('mock_bot_position'), isNot(contains('live-position')));
+  });
+
+  test('start reconciles existing remote position instead of opening duplicate',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'network': 'testnet',
+      'check_interval': 5,
+      'ema_fast': 3,
+      'ema_slow': 5,
+      'ema_signal': 8,
+      'use_trailing_stop': false,
+    });
+    final settings =
+        SettingsService(credentialsStore: MemoryCredentialsStore());
+    await settings.load();
+    final exchange = FakeExchangeClient(balanceSats: 100000);
+    final remote = await exchange.openPosition('buy');
+    final remoteId = remote['id'] as String;
+    await exchange.setTakeProfit(remoteId, 51000);
+    await exchange.setStopLoss(remoteId, 49000);
+    final log = LogService();
+    final trader = TraderService(
+      settings: settings,
+      log: log,
+      exchangeClient: exchange,
+      marketDataClient: FakeMarketDataClient(),
+      runtimeController: MacosBotRuntimeController(),
+    );
+
+    await trader.start();
+
+    final open = await exchange.getOpenPositions();
+    expect(open, hasLength(1));
+    expect(trader.position.id, remoteId);
+    expect(trader.position.side, 'long');
+    expect(trader.position.entryPrice, 50000);
+    expect(trader.position.tpPrice, 51000);
+    expect(trader.position.slPrice, 49000);
+    expect(trader.stats.totalTrades, 0);
+
+    trader.stop();
+    log.dispose();
+  });
+
+  test('start replaces stale local position with existing remote position',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'bot_position':
+          '{"id":"stale-position","side":"long","entry_price":50000}',
+      'network': 'testnet',
+      'check_interval': 5,
+      'ema_fast': 3,
+      'ema_slow': 5,
+      'ema_signal': 8,
+    });
+    final settings =
+        SettingsService(credentialsStore: MemoryCredentialsStore());
+    await settings.load();
+    final exchange = FakeExchangeClient(balanceSats: 100000);
+    final remote = await exchange.openPosition('buy');
+    final remoteId = remote['id'] as String;
+    final log = LogService();
+    final trader = TraderService(
+      settings: settings,
+      log: log,
+      exchangeClient: exchange,
+      marketDataClient: FakeMarketDataClient(),
+      runtimeController: MacosBotRuntimeController(),
+    );
+
+    await trader.start();
+
+    final open = await exchange.getOpenPositions();
+    final prefs = await SharedPreferences.getInstance();
+    final savedPosition =
+        jsonDecode(prefs.getString('bot_position')!) as Map<String, dynamic>;
+    expect(open, hasLength(1));
+    expect(trader.position.id, remoteId);
+    expect(savedPosition['id'], remoteId);
+    expect(trader.stats.totalTrades, 0);
+
+    trader.stop();
+    log.dispose();
   });
 }

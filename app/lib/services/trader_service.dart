@@ -152,6 +152,191 @@ class TraderService extends ChangeNotifier {
     await prefs.remove(positionStorageKey);
   }
 
+  Future<bool> _reconcileOpenPositions(List<dynamic> open) async {
+    if (open.isEmpty) {
+      if (_position.hasPosition) {
+        log.warning(
+            'Posicao local ${_position.id} nao aparece mais na LN Markets. Limpando estado local.');
+        _position = PositionState.empty();
+        await _clearPosition();
+      }
+      _stats.unrealizedPnl = 0;
+      return false;
+    }
+
+    final remotePositions =
+        open.map(_stringKeyedMap).whereType<Map<String, dynamic>>().toList();
+    if (remotePositions.isEmpty) {
+      log.warning(
+          'LN Markets retornou posicao aberta em formato inesperado. Abertura bloqueada.');
+      _stats.unrealizedPnl = 0;
+      return true;
+    }
+
+    _stats.unrealizedPnl = remotePositions.fold<int>(
+      0,
+      (total, position) =>
+          total +
+          (_readNum(position, const [
+                'pl',
+                'pnl',
+                'profit',
+                'unrealizedPnl',
+                'unrealized_pnl',
+              ])?.toInt() ??
+              0),
+    );
+
+    if (remotePositions.length > 1) {
+      log.warning(
+          'LN Markets possui ${remotePositions.length} posicoes abertas. Nova entrada bloqueada.');
+    }
+
+    final localId = _position.id;
+    Map<String, dynamic>? selected;
+    if (localId != null) {
+      for (final remote in remotePositions) {
+        if (_readString(remote, const ['id']) == localId) {
+          selected = remote;
+          break;
+        }
+      }
+    }
+    selected ??= remotePositions.first;
+
+    final remotePosition = _positionFromRemote(selected, existing: _position);
+    if (remotePosition.id == null) {
+      log.warning(
+          'Posicao remota aberta sem id reconhecido. Nova entrada bloqueada.');
+      return true;
+    }
+
+    if (_position.id != remotePosition.id) {
+      log.warning(
+          'Estado local sincronizado com posicao remota ${remotePosition.id}.');
+    }
+
+    _position = remotePosition;
+    await _savePosition(_position);
+    return true;
+  }
+
+  Map<String, dynamic>? _stringKeyedMap(dynamic value) {
+    if (value is! Map) return null;
+    return value.map((key, value) => MapEntry(key.toString(), value));
+  }
+
+  PositionState _positionFromRemote(
+    Map<String, dynamic> remote, {
+    required PositionState existing,
+  }) {
+    final id = _readString(remote, const ['id']);
+    final sameId = id != null && id == existing.id;
+    final side = _normalizeSide(_readString(remote, const ['side', 'type']));
+    final entryPrice = _readDouble(remote, const [
+      'entryPrice',
+      'entry_price',
+      'entry',
+      'price',
+    ]);
+    final tpPrice = _readDouble(remote, const [
+      'takeprofit',
+      'takeProfit',
+      'take_profit',
+      'tp_price',
+      'tp',
+    ]);
+    final slPrice = _readDouble(remote, const [
+      'stoploss',
+      'stopLoss',
+      'stop_loss',
+      'sl_price',
+      'sl',
+    ]);
+    final openedAt = _readDateTime(remote, const [
+      'opened_at',
+      'openedAt',
+      'created_at',
+      'createdAt',
+      'market_filled_ts',
+      'creation_ts',
+    ]);
+    final trailSlPrice = sameId
+        ? existing.trailSlPrice
+        : settings.useTrailingStop && side == 'long'
+            ? slPrice
+            : null;
+
+    return PositionState(
+      id: id,
+      side: side ?? (sameId ? existing.side : null),
+      entryPrice: entryPrice ?? (sameId ? existing.entryPrice : null),
+      tpPrice: tpPrice ?? (sameId ? existing.tpPrice : null),
+      slPrice: slPrice ?? (sameId ? existing.slPrice : null),
+      trailSlPrice: trailSlPrice,
+      openedAt: openedAt ?? (sameId ? existing.openedAt : DateTime.now()),
+    );
+  }
+
+  String? _normalizeSide(String? side) {
+    switch (side?.toLowerCase()) {
+      case 'buy':
+      case 'long':
+        return 'long';
+      case 'sell':
+      case 'short':
+        return 'short';
+      default:
+        return side?.toLowerCase();
+    }
+  }
+
+  String? _readString(Map<String, dynamic> source, List<String> keys) {
+    final value = _readValue(source, keys);
+    if (value == null) return null;
+    if (value is String) return value;
+    return value.toString();
+  }
+
+  double? _readDouble(Map<String, dynamic> source, List<String> keys) =>
+      _readNum(source, keys)?.toDouble();
+
+  num? _readNum(Map<String, dynamic> source, List<String> keys) {
+    final value = _readValue(source, keys);
+    if (value is num) return value;
+    if (value is String) return num.tryParse(value);
+    return null;
+  }
+
+  DateTime? _readDateTime(Map<String, dynamic> source, List<String> keys) {
+    final value = _readValue(source, keys);
+    if (value is DateTime) return value;
+    if (value is String) {
+      final parsed = DateTime.tryParse(value);
+      if (parsed != null) return parsed;
+      final timestamp = num.tryParse(value);
+      if (timestamp != null) return _dateTimeFromUnix(timestamp);
+    }
+    if (value is num) return _dateTimeFromUnix(value);
+    return null;
+  }
+
+  DateTime? _dateTimeFromUnix(num value) {
+    final timestamp = value.toInt();
+    if (timestamp <= 0) return null;
+    final millis = timestamp > 10000000000 ? timestamp : timestamp * 1000;
+    return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toLocal();
+  }
+
+  dynamic _readValue(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      if (source.containsKey(key) && source[key] != null) {
+        return source[key];
+      }
+    }
+    return null;
+  }
+
   // ── Start / Stop ──────────────────────────────────────────────────────────
 
   Future<void> start() async {
@@ -240,23 +425,19 @@ class TraderService extends ChangeNotifier {
       return;
     }
 
+    var hasRemoteOpenPosition = false;
     try {
       final open = await _exchangeClient.getOpenPositions();
-      if (_position.hasPosition) {
-        final ids = open.map((p) => p['id']).toList();
-        if (!ids.contains(_position.id)) {
-          log.warning('Posição ${_position.id} não encontrada. Limpando.');
-          _position = PositionState.empty();
-          await _clearPosition();
-        }
-      }
-      if (open.isNotEmpty) {
-        _stats.unrealizedPnl = ((open[0]['pl'] as num?) ?? 0).toInt();
-      } else {
-        _stats.unrealizedPnl = 0;
-      }
+      hasRemoteOpenPosition = await _reconcileOpenPositions(open);
     } catch (e) {
-      log.error('Erro ao buscar posições: $e');
+      log.error('Erro ao buscar posicoes: $e');
+      notifyListeners();
+      return;
+    }
+
+    if (hasRemoteOpenPosition && !_position.hasPosition) {
+      log.warning(
+          'Posicao remota aberta sem id reconhecido. Abertura bloqueada neste ciclo.');
       notifyListeners();
       return;
     }
