@@ -1,4 +1,4 @@
 class AppVersion {
-  static const version = '3.3.5';
-  static const build = '11';
+  static const version = '3.3.9';
+  static const build = '15';
 }
