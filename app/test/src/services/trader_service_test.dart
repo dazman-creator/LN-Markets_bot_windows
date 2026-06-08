@@ -10,6 +10,24 @@ import 'package:lnmarkets_bot/src/platform/macos/macos_bot_runtime_controller.da
 import 'package:lnmarkets_bot/src/settings/credentials_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class FailingTpSlExchangeClient extends FakeExchangeClient {
+  FailingTpSlExchangeClient({super.balanceSats});
+
+  @override
+  Future<void> applyTpSl(String id, String side, double entryPrice) async {
+    throw Exception('protect failed');
+  }
+}
+
+class FailingStopLossExchangeClient extends FakeExchangeClient {
+  FailingStopLossExchangeClient({super.balanceSats});
+
+  @override
+  Future<void> setStopLoss(String id, double price) async {
+    throw Exception('stop loss failed');
+  }
+}
+
 void main() {
   test('start uses injected fake clients and does not call live APIs',
       () async {
@@ -178,6 +196,93 @@ void main() {
     expect(trader.stats.totalTrades, 0);
 
     trader.stop();
+    log.dispose();
+  });
+
+  test('start closes new position and stops when TP/SL protection fails',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'network': 'testnet',
+      'check_interval': 5,
+      'ema_fast': 3,
+      'ema_slow': 5,
+      'ema_signal': 8,
+      'use_trailing_stop': false,
+      'take_profit_pct': 1.0,
+      'stop_loss_pct': 1.0,
+    });
+    final settings =
+        SettingsService(credentialsStore: MemoryCredentialsStore());
+    await settings.load();
+    final exchange = FailingTpSlExchangeClient(balanceSats: 100000);
+    final runtimeController = MacosBotRuntimeController();
+    final log = LogService();
+    final trader = TraderService(
+      settings: settings,
+      log: log,
+      exchangeClient: exchange,
+      marketDataClient: FakeMarketDataClient(),
+      runtimeController: runtimeController,
+    );
+
+    await trader.start();
+
+    final open = await exchange.getOpenPositions();
+    final prefs = await SharedPreferences.getInstance();
+    expect(open, isEmpty);
+    expect(trader.running, isFalse);
+    expect(runtimeController.running, isFalse);
+    expect(trader.position.hasPosition, isFalse);
+    expect(prefs.getString('bot_position'), isNull);
+    expect(
+      log.history
+          .any((entry) => entry.message.contains('Fechando defensivamente')),
+      isTrue,
+    );
+
+    log.dispose();
+  });
+
+  test('start closes new position and stops when trailing stop fails',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'network': 'testnet',
+      'check_interval': 5,
+      'ema_fast': 3,
+      'ema_slow': 5,
+      'ema_signal': 8,
+      'use_trailing_stop': true,
+      'trailing_stop_pct': 1.0,
+    });
+    final settings =
+        SettingsService(credentialsStore: MemoryCredentialsStore());
+    await settings.load();
+    final exchange = FailingStopLossExchangeClient(balanceSats: 100000);
+    final runtimeController = MacosBotRuntimeController();
+    final log = LogService();
+    final trader = TraderService(
+      settings: settings,
+      log: log,
+      exchangeClient: exchange,
+      marketDataClient: FakeMarketDataClient(),
+      runtimeController: runtimeController,
+    );
+
+    await trader.start();
+
+    final open = await exchange.getOpenPositions();
+    final prefs = await SharedPreferences.getInstance();
+    expect(open, isEmpty);
+    expect(trader.running, isFalse);
+    expect(runtimeController.running, isFalse);
+    expect(trader.position.hasPosition, isFalse);
+    expect(prefs.getString('bot_position'), isNull);
+    expect(
+      log.history
+          .any((entry) => entry.message.contains('Fechando defensivamente')),
+      isTrue,
+    );
+
     log.dispose();
   });
 }

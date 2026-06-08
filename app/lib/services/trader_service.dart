@@ -370,6 +370,7 @@ class TraderService extends ChangeNotifier {
     );
 
     await _runCycle();
+    if (!_running) return;
 
     _cycleTimer = Timer.periodic(
       Duration(minutes: settings.checkInterval),
@@ -632,7 +633,8 @@ class TraderService extends ChangeNotifier {
                 'Trailing SL inicial: \$${initialTrailSl.toStringAsFixed(2)} '
                 '(${settings.trailingStopPct}% abaixo)');
           } catch (e) {
-            log.warning('Falha ao aplicar trailing SL inicial: $e');
+            await _closeUnprotectedPosition(_position.id!, e);
+            return;
           }
           // Still apply TP if configured
           if (tp > 0) {
@@ -640,7 +642,8 @@ class TraderService extends ChangeNotifier {
               await _exchangeClient.applyTpSl(_position.id!, signal, entry);
               log.info('TP aplicado | TP=$tp%');
             } catch (e) {
-              log.warning('Falha ao aplicar TP: $e');
+              await _closeUnprotectedPosition(_position.id!, e);
+              return;
             }
           }
         } else {
@@ -650,9 +653,14 @@ class TraderService extends ChangeNotifier {
               log.info('TP/SL aplicados | TP=$tp% | SL=$sl%');
             }
           } catch (e) {
-            log.warning('Falha ao aplicar TP/SL: $e');
+            await _closeUnprotectedPosition(_position.id!, e);
+            return;
           }
         }
+      } else {
+        log.error(
+            'Posicao aberta sem id. Bot pausado para evitar operacao sem protecao.');
+        stop();
       }
     } catch (e) {
       log.error('Erro ao abrir posição: $e');
@@ -660,6 +668,28 @@ class TraderService extends ChangeNotifier {
   }
 
   // ── Atualizações periódicas ───────────────────────────────────────────────
+
+  Future<void> _closeUnprotectedPosition(
+    String positionId,
+    Object protectionError,
+  ) async {
+    log.error(
+        'Falha ao proteger posicao $positionId: $protectionError. Fechando defensivamente.');
+    try {
+      final closeResult = await _exchangeClient.closePosition(positionId);
+      final pl = ((closeResult['pl'] as num?) ?? 0).toInt();
+      _stats.netPnlSats += pl;
+      log.warning(
+          'Posicao $positionId fechada defensivamente | P&L = ${pl > 0 ? '+' : ''}$pl sats');
+    } catch (closeError) {
+      log.error(
+          'Falha ao fechar posicao sem protecao $positionId: $closeError');
+    } finally {
+      _position = PositionState.empty();
+      await _clearPosition();
+      stop();
+    }
+  }
 
   Future<void> _updateUnrealizedPnl() async {
     if (!_running) return;
