@@ -128,7 +128,7 @@ class AppLocalizations {
       // About
       'about_title': 'Sobre',
       'about_version_label': 'Versao',
-      'about_version': 'Versao 3.3.4',
+      'about_version': 'Versao 3.3.5',
       'about_desc':
           'Bot de trading automatizado para LN Markets\nseguindo a Trend Tabajara 3.0 de André Machado.',
       'about_made': 'Feito com ❤️ em Dart/Flutter com Claude',
@@ -244,7 +244,7 @@ class AppLocalizations {
       'log_clear': 'Clear',
       'about_title': 'About',
       'about_version_label': 'Version',
-      'about_version': 'Version 3.3.4',
+      'about_version': 'Version 3.3.5',
       'about_desc':
           'Automated trading bot for LN Markets\nfollowing Trend Tabajara 3.0 by André Machado.',
       'about_made': 'Made with ❤️ in Dart/Flutter with Claude',
@@ -361,7 +361,7 @@ class AppLocalizations {
       'log_clear': 'Effacer',
       'about_title': 'À propos',
       'about_version_label': 'Version',
-      'about_version': 'Version 3.3.4',
+      'about_version': 'Version 3.3.5',
       'about_desc':
           'Bot de trading automatisé pour LN Markets\nsuivant la Trend Tabajara 3.0 d\'André Machado.',
       'about_made': 'Fait avec ❤️ en Dart/Flutter avec Claude',

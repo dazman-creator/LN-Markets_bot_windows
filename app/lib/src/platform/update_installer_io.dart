@@ -154,6 +154,8 @@ $ErrorActionPreference = "Stop"
 
 $Current = Join-Path $InstallRoot "current"
 $Previous = Join-Path $InstallRoot "previous"
+$Next = Join-Path $InstallRoot "next"
+$PendingPrevious = Join-Path $InstallRoot "previous_pending"
 $Staging = Split-Path -Parent $ZipPath
 $Extract = Join-Path $Staging "extract"
 $LogPath = Join-Path $Staging "install_update.log"
@@ -170,6 +172,28 @@ try {
 
 Start-Sleep -Milliseconds 700
 
+function Invoke-WithRetry {
+  param(
+    [Parameter(Mandatory=$true)][scriptblock]$Action,
+    [Parameter(Mandatory=$true)][string]$Description,
+    [int]$Attempts = 45,
+    [int]$DelayMilliseconds = 1000
+  )
+
+  for ($i = 1; $i -le $Attempts; $i++) {
+    try {
+      & $Action
+      return
+    } catch {
+      if ($i -ge $Attempts) {
+        throw
+      }
+      Write-Host "$Description failed on attempt $i. Retrying..."
+      Start-Sleep -Milliseconds $DelayMilliseconds
+    }
+  }
+}
+
 if (Test-Path $Extract) {
   Remove-Item -LiteralPath $Extract -Recurse -Force
 }
@@ -185,16 +209,39 @@ if (-not $Exe) {
 $Payload = Split-Path -Parent $Exe.FullName
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 
-if (Test-Path $Previous) {
-  Remove-Item -LiteralPath $Previous -Recurse -Force
-}
+try {
+  if (Test-Path $Next) {
+    Invoke-WithRetry { Remove-Item -LiteralPath $Next -Recurse -Force } "Remove stale next"
+  }
+  New-Item -ItemType Directory -Force -Path $Next | Out-Null
+  Copy-Item -Path (Join-Path $Payload "*") -Destination $Next -Recurse -Force
 
-if (Test-Path $Current) {
-  Move-Item -LiteralPath $Current -Destination $Previous -Force
-}
+  if (Test-Path $PendingPrevious) {
+    Invoke-WithRetry { Remove-Item -LiteralPath $PendingPrevious -Recurse -Force } "Remove stale pending previous"
+  }
 
-New-Item -ItemType Directory -Force -Path $Current | Out-Null
-Copy-Item -Path (Join-Path $Payload "*") -Destination $Current -Recurse -Force
+  if (Test-Path $Current) {
+    Invoke-WithRetry { Move-Item -LiteralPath $Current -Destination $PendingPrevious -Force } "Move current to pending previous"
+  }
+
+  Invoke-WithRetry { Move-Item -LiteralPath $Next -Destination $Current -Force } "Move next to current"
+
+  if (Test-Path $Previous) {
+    Invoke-WithRetry { Remove-Item -LiteralPath $Previous -Recurse -Force } "Remove old previous"
+  }
+
+  if (Test-Path $PendingPrevious) {
+    Invoke-WithRetry { Move-Item -LiteralPath $PendingPrevious -Destination $Previous -Force } "Move pending previous to previous"
+  }
+} catch {
+  if ((-not (Test-Path $Current)) -and (Test-Path $PendingPrevious)) {
+    try {
+      Move-Item -LiteralPath $PendingPrevious -Destination $Current -Force
+    } catch {
+    }
+  }
+  throw
+}
 
 $NewExe = Join-Path $Current $ExeName
 Start-Process -FilePath $NewExe -WorkingDirectory $Current

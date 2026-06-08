@@ -1,7 +1,7 @@
 name: lnmarkets_bot
 description: LN Markets Trend Tabajara 3.0 Bot
 publish_to: 'none'
-version: 3.3.4+10
+version: 3.3.5+11
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

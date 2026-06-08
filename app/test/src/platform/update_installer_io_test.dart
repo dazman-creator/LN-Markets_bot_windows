@@ -19,6 +19,32 @@ class CapturedLaunch {
 }
 
 void main() {
+  test('stage writes retrying safe-swap update script', () async {
+    if (!Platform.isWindows) return;
+
+    final tagName =
+        'test-updater-script-${DateTime.now().microsecondsSinceEpoch}';
+    final installer = WindowsUpdateInstaller();
+
+    final staged = await installer.stage(
+      tagName: tagName,
+      zipFileName: 'dummy.zip',
+      zipBytes: [1, 2, 3],
+    );
+    final staging = File(staged.scriptPath).parent;
+    addTearDown(() async {
+      if (staging.existsSync()) {
+        await staging.delete(recursive: true);
+      }
+    });
+
+    final script = await File(staged.scriptPath).readAsString();
+    expect(script, contains('Invoke-WithRetry'));
+    expect(script, contains('previous_pending'));
+    expect(script, contains('Move current to pending previous'));
+    expect(script, contains('Move next to current'));
+  });
+
   test('installAndRestart launches updater through detached cmd helper',
       () async {
     if (!Platform.isWindows) return;
