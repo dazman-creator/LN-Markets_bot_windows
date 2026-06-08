@@ -1,33 +1,28 @@
 import 'package:flutter/foundation.dart';
 
 import '../../services/foreground_service.dart';
+import 'bot_runtime_controller_contract.dart';
+import 'desktop_bot_runtime_controller.dart';
 import 'macos/macos_bot_runtime_controller.dart';
 
-abstract class BotRuntimeController {
-  bool get supportsPersistentBackground;
-
-  void init();
-
-  Future<void> start({
-    required String title,
-    required String text,
-  });
-
-  Future<void> update({
-    required String title,
-    required String text,
-  });
-
-  Future<void> stop();
-
-  Future<void> requestBatteryOptimization();
-}
+export 'bot_runtime_controller_contract.dart';
 
 BotRuntimeController createBotRuntimeController() {
-  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
-    return MacosBotRuntimeController();
+  if (kIsWeb) {
+    return DesktopBotRuntimeController();
   }
-  return ForegroundTaskBotRuntimeController();
+
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+      return ForegroundTaskBotRuntimeController();
+    case TargetPlatform.macOS:
+      return MacosBotRuntimeController();
+    case TargetPlatform.windows:
+    case TargetPlatform.linux:
+    case TargetPlatform.fuchsia:
+      return DesktopBotRuntimeController();
+  }
 }
 
 class ForegroundTaskBotRuntimeController implements BotRuntimeController {

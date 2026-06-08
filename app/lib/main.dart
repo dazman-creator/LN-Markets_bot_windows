@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -9,15 +10,19 @@ import 'services/log_service.dart';
 import 'services/remote_config_service.dart';
 import 'src/clients/fake_exchange_client.dart';
 import 'src/clients/fake_market_data_client.dart';
+import 'src/platform/desktop_bot_runtime_controller.dart';
 import 'src/platform/bot_runtime_controller.dart';
-import 'src/platform/macos/macos_bot_runtime_controller.dart';
 import 'src/settings/credentials_store.dart';
 import 'screens/splash_screen.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)) {
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  }
 
   const mockMode = bool.fromEnvironment('LNMBOT_MOCK_MODE');
   if (mockMode) {
@@ -55,7 +60,7 @@ Future<LNMarketsApp> buildLiveApp() async {
 }
 
 Future<LNMarketsApp> buildMockSafeApp() async {
-  final runtimeController = MacosBotRuntimeController();
+  final runtimeController = DesktopBotRuntimeController();
   runtimeController.init();
 
   final settings = SettingsService(credentialsStore: MemoryCredentialsStore());
