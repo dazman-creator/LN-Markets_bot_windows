@@ -29,6 +29,8 @@ void main() {
     expect(release, isNotNull);
     expect(release!.tagName, 'v3.3.2');
     expect(release.prerelease, isTrue);
+    expect(
+        release.zipUrl.toString(), 'https://api.github.com/assets/v3.3.2.zip');
   });
 
   test('findLatestAvailable ignores same or older versions', () async {
@@ -62,6 +64,7 @@ void main() {
       }),
       installer: installer,
       currentVersion: const ReleaseVersion(3, 3, 1),
+      downloadRetryDelay: Duration.zero,
     );
 
     final staged = await service.downloadAndStage(UpdateRelease(
@@ -77,6 +80,45 @@ void main() {
     expect(staged.tagName, 'v3.3.2');
     expect(installer.stagedBytes, bytes);
   });
+
+  test('downloadAndStage retries transient asset download failure', () async {
+    final bytes = utf8.encode('zip-bytes');
+    const expectedHash = '4b9a4ac59f3c3aa32273260df6cf4bf'
+        '358d1c46f8415126aa35b6380d0abb8f7';
+    var zipCalls = 0;
+    const installer = _FakeInstaller();
+    final service = UpdateService(
+      client: MockClient((request) async {
+        expect(request.headers['User-Agent'], 'LN-Markets-Bot-Windows-Updater');
+        expect(request.headers['Accept'], 'application/octet-stream');
+        if (request.url.path.endsWith('.sha256')) {
+          return http.Response('$expectedHash  update.zip', 200);
+        }
+        zipCalls++;
+        if (zipCalls == 1) {
+          return http.Response('gateway timeout', 504);
+        }
+        return http.Response.bytes(bytes, 200);
+      }),
+      installer: installer,
+      currentVersion: const ReleaseVersion(3, 3, 1),
+      downloadRetryDelay: Duration.zero,
+    );
+
+    final staged = await service.downloadAndStage(UpdateRelease(
+      tagName: 'v3.3.2',
+      version: const ReleaseVersion(3, 3, 2),
+      htmlUrl: 'https://github.com/release',
+      zipName: 'LN-Markets-Bot-Windows-v3.3.2.zip',
+      zipUrl: Uri.parse('https://api.example.com/assets/update.zip'),
+      sha256Url: Uri.parse('https://api.example.com/assets/update.zip.sha256'),
+      prerelease: true,
+    ));
+
+    expect(staged.tagName, 'v3.3.2');
+    expect(zipCalls, 2);
+    expect(installer.stagedBytes, bytes);
+  });
 }
 
 Map<String, Object?> _release(String tagName, {required bool prerelease}) => {
@@ -87,10 +129,12 @@ Map<String, Object?> _release(String tagName, {required bool prerelease}) => {
       'assets': [
         {
           'name': 'LN-Markets-Bot-Windows-$tagName.zip',
+          'url': 'https://api.github.com/assets/$tagName.zip',
           'browser_download_url': 'https://example.com/$tagName.zip',
         },
         {
           'name': 'LN-Markets-Bot-Windows-$tagName.zip.sha256',
+          'url': 'https://api.github.com/assets/$tagName.zip.sha256',
           'browser_download_url': 'https://example.com/$tagName.zip.sha256',
         },
       ],
