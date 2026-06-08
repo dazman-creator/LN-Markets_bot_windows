@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
+import '../app_version.dart';
 import '../i18n.dart';
 
 class AboutTab extends StatelessWidget {
@@ -33,7 +34,7 @@ class AboutTab extends StatelessWidget {
                     color: AppColors.textMain)),
           ),
           Center(
-            child: Text(t('about_version'),
+            child: Text('${t('about_version_label')} ${AppVersion.version}',
                 style:
                     const TextStyle(fontSize: 13, color: AppColors.textMuted)),
           ),

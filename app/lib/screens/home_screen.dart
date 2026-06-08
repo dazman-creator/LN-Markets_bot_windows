@@ -3,6 +3,7 @@ import '../i18n.dart';
 import '../services/settings_service.dart';
 import '../services/trader_service.dart';
 import '../services/log_service.dart';
+import '../services/update_service.dart';
 import '../src/platform/bot_runtime_controller.dart';
 import '../app_theme.dart';
 import '../widgets/sponsor_banner.dart';
@@ -36,6 +37,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
+  bool _checkedForUpdates = false;
 
   // Desktop width threshold
   static const double _desktopBreak = 600;
@@ -48,10 +50,97 @@ class _HomeScreenState extends State<HomeScreen> {
       widget.traderService.fetchPriceOnce();
       Future.delayed(const Duration(seconds: 2),
           () => widget.runtimeController.requestBatteryOptimization());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdates());
     }
   }
 
   void _onTab(int i) => setState(() => _tab = i);
+
+  Future<void> _checkForUpdates() async {
+    if (_checkedForUpdates) return;
+    _checkedForUpdates = true;
+
+    final service = UpdateService();
+    try {
+      final release = await service.findLatestAvailable();
+      if (!mounted || release == null) return;
+
+      final install = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(t('update_title')),
+          content: Text(
+            t('update_body').replaceAll('{version}', release.tagName),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(t('update_later')),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(t('update_install')),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted || install != true) return;
+      if (widget.traderService.running) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('update_running'))),
+        );
+        return;
+      }
+
+      await _downloadAndInstallUpdate(service, release);
+    } catch (_) {
+      // Startup update checks should never block normal app usage.
+    } finally {
+      service.dispose();
+    }
+  }
+
+  Future<void> _downloadAndInstallUpdate(
+    UpdateService service,
+    UpdateRelease release,
+  ) async {
+    var dialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 16),
+            Expanded(child: Text(t('update_downloading'))),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final staged = await service.downloadAndStage(release);
+      if (mounted && dialogOpen) {
+        Navigator.of(context).pop();
+        dialogOpen = false;
+      }
+      await service.installAndRestart(staged);
+    } catch (e) {
+      if (!mounted) return;
+      if (dialogOpen) {
+        Navigator.of(context).pop();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${t('update_error')}: $e')),
+      );
+    }
+  }
 
   List<Widget> get _pages => [
         DashboardTab(

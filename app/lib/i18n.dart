@@ -127,7 +127,8 @@ class AppLocalizations {
       'spon_contact_telegram': 'Falar no Telegram',
       // About
       'about_title': 'Sobre',
-      'about_version': 'Versão 3.3.0',
+      'about_version_label': 'Versao',
+      'about_version': 'Versao 3.3.1',
       'about_desc':
           'Bot de trading automatizado para LN Markets\nseguindo a Trend Tabajara 3.0 de André Machado.',
       'about_made': 'Feito com ❤️ em Dart/Flutter com Claude',
@@ -135,6 +136,13 @@ class AppLocalizations {
       'about_thanks': 'Agradecimentos Especiais',
       'about_risk':
           '⚠  Trading alavancado envolve risco\nsignificativo de perda de capital.\nUse por sua conta e risco.',
+      'update_title': 'Atualizacao disponivel',
+      'update_body': 'A versao {version} esta disponivel. Instalar agora?',
+      'update_later': 'Depois',
+      'update_install': 'Instalar',
+      'update_running': 'Pause o bot antes de atualizar.',
+      'update_downloading': 'Baixando e validando atualizacao...',
+      'update_error': 'Falha ao atualizar',
     },
     'en': {
       // Dashboard TP/SL
@@ -235,7 +243,8 @@ class AppLocalizations {
       'log_title': 'Real-Time Logs',
       'log_clear': 'Clear',
       'about_title': 'About',
-      'about_version': 'Version 3.3.0',
+      'about_version_label': 'Version',
+      'about_version': 'Version 3.3.1',
       'about_desc':
           'Automated trading bot for LN Markets\nfollowing Trend Tabajara 3.0 by André Machado.',
       'about_made': 'Made with ❤️ in Dart/Flutter with Claude',
@@ -243,6 +252,13 @@ class AppLocalizations {
       'about_thanks': 'Special Thanks',
       'about_risk':
           '⚠  Leveraged trading involves significant\nrisk of capital loss.\nUse at your own risk.',
+      'update_title': 'Update available',
+      'update_body': 'Version {version} is available. Install it now?',
+      'update_later': 'Later',
+      'update_install': 'Install',
+      'update_running': 'Pause the bot before updating.',
+      'update_downloading': 'Downloading and validating update...',
+      'update_error': 'Update failed',
     },
     'fr': {
       // Dashboard TP/SL
@@ -344,7 +360,8 @@ class AppLocalizations {
       'log_title': 'Journaux en Temps Réel',
       'log_clear': 'Effacer',
       'about_title': 'À propos',
-      'about_version': 'Version 3.3.0',
+      'about_version_label': 'Version',
+      'about_version': 'Version 3.3.1',
       'about_desc':
           'Bot de trading automatisé pour LN Markets\nsuivant la Trend Tabajara 3.0 d\'André Machado.',
       'about_made': 'Fait avec ❤️ en Dart/Flutter avec Claude',
@@ -352,6 +369,14 @@ class AppLocalizations {
       'about_thanks': 'Remerciements Spéciaux',
       'about_risk':
           '⚠  Le trading avec levier implique un risque\nsignificatif de perte en capital.\nUtilisez à vos propres risques.',
+      'update_title': 'Mise a jour disponible',
+      'update_body':
+          'La version {version} est disponible. Installer maintenant?',
+      'update_later': 'Plus tard',
+      'update_install': 'Installer',
+      'update_running': 'Mettez le bot en pause avant la mise a jour.',
+      'update_downloading': 'Telechargement et validation de la mise a jour...',
+      'update_error': 'Echec de la mise a jour',
     },
   };
 }
