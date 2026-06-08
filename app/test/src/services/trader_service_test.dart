@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lnmarkets_bot/services/binance_api.dart';
 import 'package:lnmarkets_bot/services/log_service.dart';
 import 'package:lnmarkets_bot/services/settings_service.dart';
 import 'package:lnmarkets_bot/services/trader_service.dart';
 import 'package:lnmarkets_bot/src/clients/fake_exchange_client.dart';
 import 'package:lnmarkets_bot/src/clients/fake_market_data_client.dart';
+import 'package:lnmarkets_bot/src/clients/market_data_client.dart';
 import 'package:lnmarkets_bot/src/platform/macos/macos_bot_runtime_controller.dart';
 import 'package:lnmarkets_bot/src/settings/credentials_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +29,29 @@ class FailingStopLossExchangeClient extends FakeExchangeClient {
   Future<void> setStopLoss(String id, double price) async {
     throw Exception('stop loss failed');
   }
+}
+
+class BlockingCycleMarketDataClient implements MarketDataClient {
+  int fetchCalls = 0;
+  final secondCycleStarted = Completer<void>();
+  final releaseSecondCycle = Completer<void>();
+
+  @override
+  Future<List<Candle>> fetchCandles(String interval, int limit) async {
+    fetchCalls++;
+    if (fetchCalls == 2) {
+      secondCycleStarted.complete();
+      await releaseSecondCycle.future;
+    }
+    final safeLimit = limit < 1 ? 1 : limit;
+    return List.generate(
+      safeLimit,
+      (_) => const Candle(49999, 50001, 49998, 50000, 100),
+    );
+  }
+
+  @override
+  Future<double> fetchPrice() async => 50000;
 }
 
 void main() {
@@ -283,6 +309,54 @@ void main() {
       isTrue,
     );
 
+    log.dispose();
+  });
+
+  test('periodic cycle skips when previous cycle is still running', () async {
+    SharedPreferences.setMockInitialValues({
+      'network': 'testnet',
+      'check_interval': 0,
+      'ema_fast': 3,
+      'ema_slow': 5,
+      'ema_signal': 8,
+      'use_trailing_stop': false,
+    });
+    final settings =
+        SettingsService(credentialsStore: MemoryCredentialsStore());
+    await settings.load();
+    final marketData = BlockingCycleMarketDataClient();
+    final log = LogService();
+    final trader = TraderService(
+      settings: settings,
+      log: log,
+      exchangeClient: FakeExchangeClient(balanceSats: 100000),
+      marketDataClient: marketData,
+      runtimeController: MacosBotRuntimeController(),
+    );
+
+    await trader.start();
+    expect(marketData.fetchCalls, 1);
+
+    await marketData.secondCycleStarted.future
+        .timeout(const Duration(seconds: 2));
+    for (var i = 0; i < 20; i++) {
+      if (log.history
+          .any((entry) => entry.message.contains('Pulando ciclo sobreposto'))) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+
+    expect(marketData.fetchCalls, 2);
+    expect(
+      log.history
+          .any((entry) => entry.message.contains('Pulando ciclo sobreposto')),
+      isTrue,
+    );
+
+    trader.stop();
+    marketData.releaseSecondCycle.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
     log.dispose();
   });
 }

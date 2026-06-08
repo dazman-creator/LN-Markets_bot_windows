@@ -123,6 +123,7 @@ class TraderService extends ChangeNotifier {
   Timer? _cycleTimer;
   Timer? _pnlTimer;
   Timer? _priceTimer;
+  bool _cycleRunning = false;
 
   late ExchangeClient _exchangeClient;
   late MarketDataClient _marketDataClient;
@@ -402,6 +403,20 @@ class TraderService extends ChangeNotifier {
   // ── Ciclo de verificação ──────────────────────────────────────────────────
 
   Future<void> _runCycle() async {
+    if (_cycleRunning) {
+      log.warning(
+          'Ciclo anterior ainda em execucao. Pulando ciclo sobreposto.');
+      return;
+    }
+    _cycleRunning = true;
+    try {
+      await _runCycleCore();
+    } finally {
+      _cycleRunning = false;
+    }
+  }
+
+  Future<void> _runCycleCore() async {
     log.info('─' * 50);
     log.info('Iniciando ciclo: ${DateTime.now()}');
 
