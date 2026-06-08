@@ -94,4 +94,72 @@ void main() {
     expect(prefs.getString('api_secret'), isNull);
     expect(prefs.getString('api_passphrase'), isNull);
   });
+
+  test('load normalizes unsafe risk settings from storage', () async {
+    SharedPreferences.setMockInitialValues({
+      'network': 'invalid',
+      'timeframe': 'bad',
+      'leverage': 0,
+      'margin_sats': 0,
+      'check_interval': 0,
+      'ema_fast': 900,
+      'ema_slow': 1,
+      'ema_signal': 0,
+      'take_profit_pct': -1.0,
+      'stop_loss_pct': 150.0,
+      'trailing_stop_pct': -5.0,
+      'compounding_pct': 250.0,
+    });
+    final service = SettingsService(credentialsStore: MemoryCredentialsStore());
+
+    await service.load();
+
+    expect(service.network, 'testnet');
+    expect(service.timeframe, '15m');
+    expect(service.leverage, 1);
+    expect(service.marginSats, 1);
+    expect(service.checkInterval, 1);
+    expect(service.emaFast, 499);
+    expect(service.emaSlow, 500);
+    expect(service.emaSignal, 2);
+    expect(service.takeProfitPct, 0);
+    expect(service.stopLossPct, 100);
+    expect(service.trailingStopPct, 0.1);
+    expect(service.compoundingPct, 100);
+  });
+
+  test('save persists normalized risk settings', () async {
+    SharedPreferences.setMockInitialValues({});
+    final service = SettingsService(credentialsStore: MemoryCredentialsStore());
+
+    await service.load();
+    service.network = 'bad';
+    service.timeframe = 'bad';
+    service.leverage = -10;
+    service.marginSats = -1;
+    service.checkInterval = -5;
+    service.emaFast = 10;
+    service.emaSlow = 10;
+    service.emaSignal = 999;
+    service.takeProfitPct = double.nan;
+    service.stopLossPct = double.infinity;
+    service.trailingStopPct = 0;
+    service.compoundingPct = -1;
+
+    await service.save();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('network'), 'testnet');
+    expect(prefs.getString('timeframe'), '15m');
+    expect(prefs.getInt('leverage'), 1);
+    expect(prefs.getInt('margin_sats'), 1);
+    expect(prefs.getInt('check_interval'), 1);
+    expect(prefs.getInt('ema_fast'), 10);
+    expect(prefs.getInt('ema_slow'), 11);
+    expect(prefs.getInt('ema_signal'), 500);
+    expect(prefs.getDouble('take_profit_pct'), 0);
+    expect(prefs.getDouble('stop_loss_pct'), 0);
+    expect(prefs.getDouble('trailing_stop_pct'), 0.1);
+    expect(prefs.getDouble('compounding_pct'), 0.1);
+  });
 }

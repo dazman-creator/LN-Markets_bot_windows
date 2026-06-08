@@ -141,7 +141,10 @@ class _SettingsTabState extends State<SettingsTab> {
     s.longOnly = _longOnly;
     await s.save();
 
-    setState(() => _savedMsg = t('set_saved'));
+    setState(() {
+      _syncFieldsFromSettings();
+      _savedMsg = t('set_saved');
+    });
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _savedMsg = null);
     });
@@ -152,8 +155,27 @@ class _SettingsTabState extends State<SettingsTab> {
     AppLocalizations.setLanguage(lang);
     widget.settings.language = lang;
     await widget.settings.save();
-    setState(() {});
+    setState(() => _syncFieldsFromSettings());
     widget.onSaved();
+  }
+
+  void _syncFieldsFromSettings() {
+    final s = widget.settings;
+    _leverage.text = '${s.leverage}';
+    _margin.text = '${s.marginSats}';
+    _interval.text = '${s.checkInterval}';
+    _emaFast.text = '${s.emaFast}';
+    _emaSlow.text = '${s.emaSlow}';
+    _emaSignal.text = '${s.emaSignal}';
+    _tp.text = '${s.takeProfitPct}';
+    _sl.text = '${s.stopLossPct}';
+    _trailPct.text = '${s.trailingStopPct}';
+    _compoundPct.text = '${s.compoundingPct}';
+    _timeframe = s.timeframe;
+    _network = s.network;
+    _longOnly = s.longOnly;
+    _useTrailingStop = s.useTrailingStop;
+    _useCompounding = s.useCompounding;
   }
 
   @override

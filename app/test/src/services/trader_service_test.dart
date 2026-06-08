@@ -324,6 +324,7 @@ void main() {
     final settings =
         SettingsService(credentialsStore: MemoryCredentialsStore());
     await settings.load();
+    settings.checkInterval = 0;
     final marketData = BlockingCycleMarketDataClient();
     final log = LogService();
     final trader = TraderService(

@@ -30,6 +30,21 @@ class SettingsService {
   double compoundingPct = 10.0; // % of balance to use per trade (default 10%)
   String language = 'pt_BR';
 
+  static const allowedNetworks = {'testnet', 'mainnet'};
+  static const allowedTimeframes = {
+    '1m',
+    '3m',
+    '5m',
+    '15m',
+    '30m',
+    '1h',
+    '2h',
+    '4h',
+    '6h',
+    '12h',
+    '1d',
+  };
+
   bool get hasCredentials =>
       apiKey.isNotEmpty && apiSecret.isNotEmpty && apiPassphrase.isNotEmpty;
 
@@ -60,9 +75,11 @@ class SettingsService {
     compoundingPct = _prefs.getDouble('compounding_pct') ?? 10.0;
     longOnly = _prefs.getBool('long_only') ?? true;
     language = _prefs.getString('language') ?? 'pt_BR';
+    normalizeRiskSettings();
   }
 
   Future<void> save() async {
+    normalizeRiskSettings();
     await _saveCredential('api_key', apiKey);
     await _saveCredential('api_secret', apiSecret);
     await _saveCredential('api_passphrase', apiPassphrase);
@@ -82,6 +99,41 @@ class SettingsService {
     await _prefs.setDouble('compounding_pct', compoundingPct);
     await _prefs.setBool('long_only', longOnly);
     await _prefs.setString('language', language);
+  }
+
+  void normalizeRiskSettings() {
+    if (!allowedNetworks.contains(network)) network = 'testnet';
+    if (!allowedTimeframes.contains(timeframe)) timeframe = '15m';
+
+    leverage = _clampInt(leverage, 1, 100);
+    marginSats = _clampInt(marginSats, 1, 100000000);
+    checkInterval = _clampInt(checkInterval, 1, 1440);
+
+    emaFast = _clampInt(emaFast, 1, 499);
+    emaSlow = _clampInt(emaSlow, 2, 500);
+    if (emaSlow <= emaFast) {
+      emaSlow = _clampInt(emaFast + 1, 2, 500);
+      if (emaSlow <= emaFast) emaFast = emaSlow - 1;
+    }
+    emaSignal = _clampInt(emaSignal, 2, 500);
+
+    takeProfitPct = _clampDouble(takeProfitPct, 0, 100);
+    stopLossPct = _clampDouble(stopLossPct, 0, 100);
+    trailingStopPct = _clampDouble(trailingStopPct, 0.1, 50);
+    compoundingPct = _clampDouble(compoundingPct, 0.1, 100);
+  }
+
+  int _clampInt(int value, int min, int max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+  }
+
+  double _clampDouble(double value, double min, double max) {
+    if (!value.isFinite) return min;
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
   }
 
   Future<String> _loadCredential(String key) async {
