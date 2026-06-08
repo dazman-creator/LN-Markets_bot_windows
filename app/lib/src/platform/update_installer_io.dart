@@ -2,9 +2,30 @@ import 'dart:io';
 
 import 'update_installer_contract.dart';
 
+typedef UpdateProcessLauncher = Future<void> Function(
+  String executable,
+  List<String> arguments, {
+  required ProcessStartMode mode,
+  required bool runInShell,
+});
+
+typedef UpdateExit = void Function(int code);
+
 UpdateInstaller createUpdateInstaller() => WindowsUpdateInstaller();
 
 class WindowsUpdateInstaller implements UpdateInstaller {
+  final UpdateProcessLauncher _launchProcess;
+  final UpdateExit _exitApp;
+  final Duration _exitDelay;
+
+  WindowsUpdateInstaller({
+    UpdateProcessLauncher? launchProcess,
+    UpdateExit? exitApp,
+    Duration exitDelay = const Duration(milliseconds: 300),
+  })  : _launchProcess = launchProcess ?? _defaultLaunchProcess,
+        _exitApp = exitApp ?? ((code) => exit(code)),
+        _exitDelay = exitDelay;
+
   @override
   bool get isSupported => Platform.isWindows;
 
@@ -47,32 +68,71 @@ class WindowsUpdateInstaller implements UpdateInstaller {
     final root = _installRoot();
     final exeName =
         Platform.resolvedExecutable.split(Platform.pathSeparator).last;
-    final args = [
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      update.scriptPath,
-      '-ZipPath',
-      update.zipPath,
-      '-InstallRoot',
-      root.path,
-      '-CurrentPid',
-      pid.toString(),
-      '-ExeName',
-      exeName,
-    ];
+    final staging = File(update.scriptPath).parent;
+    final launcherPath = '${staging.path}\\launch_update.cmd';
 
-    await Process.start(
-      'powershell.exe',
-      args,
+    await File(launcherPath).writeAsString(
+      _launcherScript(
+        powershellPath: _powershellPath(),
+        scriptPath: update.scriptPath,
+        zipPath: update.zipPath,
+        installRoot: root.path,
+        currentPid: pid,
+        exeName: exeName,
+      ),
+      flush: true,
+    );
+
+    await _launchProcess(
+      'cmd.exe',
+      ['/C', launcherPath],
       mode: ProcessStartMode.detached,
       runInShell: false,
     );
 
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    exit(0);
+    await Future<void>.delayed(_exitDelay);
+    _exitApp(0);
   }
+
+  static Future<void> _defaultLaunchProcess(
+    String executable,
+    List<String> arguments, {
+    required ProcessStartMode mode,
+    required bool runInShell,
+  }) async {
+    await Process.start(
+      executable,
+      arguments,
+      mode: mode,
+      runInShell: runInShell,
+    );
+  }
+
+  String _launcherScript({
+    required String powershellPath,
+    required String scriptPath,
+    required String zipPath,
+    required String installRoot,
+    required int currentPid,
+    required String exeName,
+  }) =>
+      '''
+@echo off
+setlocal
+start "" /min ${_cmdQuote(powershellPath)} -NoProfile -ExecutionPolicy Bypass -File ${_cmdQuote(scriptPath)} -ZipPath ${_cmdQuote(zipPath)} -InstallRoot ${_cmdQuote(installRoot)} -CurrentPid $currentPid -ExeName ${_cmdQuote(exeName)}
+''';
+
+  String _powershellPath() {
+    final systemRoot = Platform.environment['SystemRoot'];
+    if (systemRoot != null && systemRoot.isNotEmpty) {
+      final powershellPath =
+          '$systemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+      if (File(powershellPath).existsSync()) return powershellPath;
+    }
+    return 'powershell.exe';
+  }
+
+  String _cmdQuote(String value) => '"${value.replaceAll('"', '""')}"';
 
   Directory _installRoot() {
     final localAppData = Platform.environment['LOCALAPPDATA'];
@@ -96,6 +156,12 @@ $Current = Join-Path $InstallRoot "current"
 $Previous = Join-Path $InstallRoot "previous"
 $Staging = Split-Path -Parent $ZipPath
 $Extract = Join-Path $Staging "extract"
+$LogPath = Join-Path $Staging "install_update.log"
+
+try {
+  Start-Transcript -Path $LogPath -Append | Out-Null
+} catch {
+}
 
 try {
   Wait-Process -Id $CurrentPid -Timeout 90 -ErrorAction SilentlyContinue
@@ -132,5 +198,10 @@ Copy-Item -Path (Join-Path $Payload "*") -Destination $Current -Recurse -Force
 
 $NewExe = Join-Path $Current $ExeName
 Start-Process -FilePath $NewExe -WorkingDirectory $Current
+
+try {
+  Stop-Transcript | Out-Null
+} catch {
+}
 ''';
 }
